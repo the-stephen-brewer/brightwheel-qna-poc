@@ -159,6 +159,55 @@ Grounding Knowledge Matrix:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/admin/knowledge")
+async def get_knowledge():
+    try:
+        with db_engine.connect() as conn:
+            result = conn.execute(text("SELECT id, content, metadata FROM front_desk_knowledge ORDER BY id DESC"))
+            return [{"id": row[0], "content": row[1], "metadata": row[2]} for row in result]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/logs")
+async def get_logs(filter_type: Optional[str] = None):
+    try:
+        query_str = "SELECT id, question, answer, feedback, needs_review, created_at FROM front_desk_logs"
+        if filter_type == "alerts":
+            query_str += " WHERE feedback = 'thumbs_down'"
+        elif filter_type == "escalations":
+            query_str += " WHERE needs_review = TRUE"
+        
+        query_str += " ORDER BY created_at DESC"
+        
+        with db_engine.connect() as conn:
+            result = conn.execute(text(query_str))
+            rows = result.fetchall()
+            return [{
+                "id": str(row[0]),
+                "question": row[1],
+                "answer": row[2],
+                "feedback": row[3],
+                "needs_review": row[4],
+                "created_at": row[5]
+            } for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/trends")
+async def get_trends():
+    try:
+        with db_engine.connect() as conn:
+            total = conn.execute(text("SELECT count(*) FROM front_desk_logs")).scalar() or 0
+            resolved = conn.execute(text("SELECT count(*) FROM front_desk_logs WHERE needs_review = FALSE")).scalar() or 0
+            
+            return {
+                "total_inquiries": total,
+                "resolution_rate": (resolved / total * 100) if total > 0 else 100,
+                "top_categories": [{"name": "Policy Queries", "count": total}] 
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/feedback")
 async def handle_feedback(req: FeedbackRequest):
     try:
