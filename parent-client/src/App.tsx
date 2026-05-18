@@ -35,7 +35,7 @@ function App() {
     if (!text.trim() || isLoading) return;
 
     const userMsg: Message = {
-      id: Date.now().toString(),
+      id: `parent-${Date.now()}-${Math.random()}`,
       role: 'user',
       text: text.trim()
     };
@@ -56,7 +56,7 @@ function App() {
       const data = await response.json();
       
       const aiMsg: Message = {
-        id: data.log_id || (Date.now() + 1).toString(),
+        id: data.log_id || `ai-${Date.now()}-${Math.random()}`,
         role: 'ai',
         text: data.answer
       };

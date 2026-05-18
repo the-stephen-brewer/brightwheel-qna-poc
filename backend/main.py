@@ -69,11 +69,14 @@ def log_interaction(question: str, answer: str, needs_review: bool):
             query = text("""
                 INSERT INTO front_desk_logs (question, answer, needs_review)
                 VALUES (:q, :a, :r)
+                RETURNING id
             """)
-            conn.execute(query, {"q": question, "a": answer, "r": needs_review})
+            result = conn.execute(query, {"q": question, "a": answer, "r": needs_review})
+            return result.fetchone()[0]
     except Exception as e:
         print(f"Failed to log interaction: {e}")
         traceback.print_exc()
+        return None
 
 def get_relevant_context(query: str, k: int = 2):
     try:
@@ -90,7 +93,7 @@ def get_relevant_context(query: str, k: int = 2):
         with db_engine.connect() as conn:
             query_sql = text("""
                 SELECT content FROM front_desk_knowledge
-                ORDER BY embedding <=> :v::vector
+                ORDER BY embedding <=> CAST(:v AS vector)
                 LIMIT :k
             """)
             result = conn.execute(query_sql, {"v": vector_str, "k": k})
@@ -153,7 +156,11 @@ Grounding Knowledge Matrix:
         # For PoC, let's just create the log synchronously or return the ID if we have it
         log_id = log_interaction(req.message, ai_answer, needs_review)
 
-        return {"answer": ai_answer, "needs_review": needs_review, "log_id": str(log_id)}
+        return {
+            "answer": ai_answer, 
+            "needs_review": needs_review, 
+            "log_id": str(log_id) if log_id else None
+        }
     except Exception as e:
         print(f"ERROR IN CHAT ENDPOINT: {e}")
         traceback.print_exc()
@@ -208,16 +215,30 @@ async def get_trends():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/admin/resolve")
+async def resolve_ticket(req: FeedbackRequest):
+    try:
+        with db_engine.begin() as conn:
+            conn.execute(
+                text("UPDATE front_desk_logs SET needs_review = FALSE WHERE id = CAST(:id AS uuid)"),
+                {"id": req.log_id}
+            )
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/feedback")
 async def handle_feedback(req: FeedbackRequest):
     try:
         with db_engine.begin() as conn:
             conn.execute(
-                text("UPDATE front_desk_logs SET feedback = :f WHERE id = :id"),
+                text("UPDATE front_desk_logs SET feedback = :f WHERE id = CAST(:id AS uuid)"),
                 {"f": req.feedback, "id": req.log_id}
             )
         return {"status": "ok"}
     except Exception as e:
+        print(f"Feedback error: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")

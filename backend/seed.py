@@ -43,7 +43,7 @@ async def seed_data():
     sections = content.split("## ")[1:]
     
     # In Vertex AI, we use the model ID directly
-    MODEL_NAME = "text-embedding-004"
+    MODEL_NAME = "gemini-embedding-001"
     
     print(f"Embedding {len(sections)} documents using Vertex AI ({MODEL_NAME})...")
     

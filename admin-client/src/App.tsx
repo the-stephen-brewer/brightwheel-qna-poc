@@ -61,9 +61,24 @@ function App() {
   };
 
   useEffect(() => {
+    setData([]);
     fetchData();
     setSelectedItem(null);
   }, [activeView]);
+
+  const handleResolve = async (id: string) => {
+    try {
+      await fetch(`${API_BASE.replace('/admin', '')}/admin/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ log_id: id, feedback: '' }) // feedback not used here but required by schema
+      });
+      fetchData();
+      setSelectedItem(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const renderBadge = (item: LogItem) => {
     if (item.needs_review) return <span className="badge urgent">Escalated</span>;
@@ -141,13 +156,13 @@ function App() {
                     {activeView === 'knowledge' ? (
                       <>
                         <td><span className="badge resolved">{(item as KnowledgeItem).metadata?.category}</span></td>
-                        <td>{(item as KnowledgeItem).content.substring(0, 100)}...</td>
+                        <td>{(item as KnowledgeItem).content?.substring(0, 100)}...</td>
                       </>
                     ) : (
                       <>
                         <td>{renderBadge(item as LogItem)}</td>
                         <td>{(item as LogItem).question}</td>
-                        <td>{new Date((item as LogItem).created_at).toLocaleTimeString()}</td>
+                        <td>{(item as LogItem).created_at ? new Date((item as LogItem).created_at).toLocaleTimeString() : ''}</td>
                       </>
                     )}
                   </tr>
@@ -194,9 +209,15 @@ function App() {
                       Needs Review: {selectedItem.needs_review ? 'Yes' : 'No'}
                     </div>
                   </div>
-                  <button className="nav-item active" style={{width: '100%', justifyContent: 'center', borderRadius: '4px'}}>
-                    <CheckCircle2 size={16} /> Mark as Resolved
-                  </button>
+                  {selectedItem.needs_review && (
+                    <button 
+                      className="nav-item active" 
+                      style={{width: '100%', justifyContent: 'center', borderRadius: '4px'}}
+                      onClick={() => handleResolve(selectedItem.id)}
+                    >
+                      <CheckCircle2 size={16} /> Mark as Resolved
+                    </button>
+                  )}
                 </>
               )}
             </>

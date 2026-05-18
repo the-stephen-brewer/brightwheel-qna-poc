@@ -6,12 +6,12 @@ CREATE TABLE IF NOT EXISTS front_desk_knowledge (
     id BIGSERIAL PRIMARY KEY,
     content TEXT NOT NULL,
     metadata JSONB,
-    embedding VECTOR(768)
+    embedding VECTOR(3072)
 );
 
 -- Similarity search function
 CREATE OR REPLACE FUNCTION match_front_desk (
-    query_embedding VECTOR(768),
+    query_embedding VECTOR(3072),
     match_threshold FLOAT,
     match_count INT
 )

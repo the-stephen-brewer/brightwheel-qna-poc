@@ -29,6 +29,9 @@ def run_schema():
             # We need to execute the extension separately if it fails in a block
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
             
+            # For POC, drop existing table to update dimensions
+            conn.execute(text("DROP TABLE IF EXISTS front_desk_knowledge CASCADE;"))
+            
             # Execute the rest of the schema
             # SQLAlchemy's execute(text(...)) handles the multi-line string
             conn.execute(text(schema_sql))
