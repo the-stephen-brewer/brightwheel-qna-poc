@@ -8,3 +8,5 @@ google-genai
 google-auth
 httpx
 pytest
+pypdf
+langchain-text-splitters
