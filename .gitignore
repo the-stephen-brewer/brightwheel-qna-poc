@@ -2,3 +2,4 @@ react-app/package-lock.json
 tmp*
 **__pycache__**
 .env
+*.pdf

@@ -33,7 +33,7 @@ interface TrendData {
   top_categories: { name: string, count: number }[];
 }
 
-const API_BASE = 'http://localhost:8080/api/admin';
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api') + '/admin';
 
 function App() {
   const [activeView, setActiveView] = useState<View>('escalations');

@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 import json
 import traceback
 
+from google.oauth2 import service_account
+
 load_dotenv()
 
 app = FastAPI(title="Brightwheel AI Front Desk PoC")
@@ -35,7 +37,19 @@ db_engine = create_engine(DB_URL)
 
 # Initialize Google GenAI Client (Vertex AI mode)
 try:
-    credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    # Check for raw JSON string in environment first
+    json_creds = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if json_creds:
+        import json
+        info = json.loads(json_creds)
+        credentials = service_account.Credentials.from_service_account_info(
+            info, 
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+    else:
+        # Fallback to default OIDC / Application Default Credentials
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    
     genai_client = genai.Client(
         vertexai=True,
         project="betterai",
@@ -241,6 +255,7 @@ async def handle_feedback(req: FeedbackRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/")
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}

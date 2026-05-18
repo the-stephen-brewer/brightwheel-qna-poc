@@ -9,3 +9,13 @@ Model versions to use:
 general use: gemini-3.1-flash-lite
 advanced processing: gemini-3.1-pro-preview
 embeddings: gemini-embedding-001
+
+Front end deployments:
+buckets: brightwheel-demo-admin, brightwheel-demo-client
+github action secrets: AWS_ROLE_ARN, ADMIN_DISTRIBUTION_ID, CLIENT_DISTRIBUTION_ID
+
+Backend deployment (dockerpush.sh requirements in .env):
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=us-east-1
+ECR_URI=134267836285.dkr.ecr.us-east-1.amazonaws.com

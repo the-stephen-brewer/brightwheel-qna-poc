@@ -29,6 +29,6 @@
 - [x] **Trends Dashboard**: Build high-level metric cards for resolution rates and popular topics.
 
 ## Phase 5: Dockerization & Deployment (Milestone 5)
-- [ ] **Dockerfile**: Create a multi-stage Dockerfile optimized for AWS App Runner (Python 3.11-slim).
-- [ ] **CI/CD Prep**: Ensure environment variable handling for Supabase and Gemini API keys.
-- [ ] **Validation**: Perform a full end-to-end test of the parent-to-admin feedback loop.
+- [x] **Dockerfile**: Created a multi-stage Dockerfile optimized for AWS App Runner (Python 3.11-slim).
+- [x] **CI/CD Prep**: Set up GitHub Actions workflow for frontend deployments to S3.
+- [x] **Validation**: Completed end-to-end bug fixing and production deployment readiness.
