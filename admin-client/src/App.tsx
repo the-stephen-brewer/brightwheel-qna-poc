@@ -31,12 +31,13 @@ interface TrendData {
   total_inquiries: number;
   resolution_rate: number;
   top_categories: { name: string, count: number }[];
+  sample_questions: string[];
 }
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api') + '/admin';
 
 function App() {
-  const [activeView, setActiveView] = useState<View>('escalations');
+  const [activeView, setActiveView] = useState<View>('trends');
   const [data, setData] = useState<any[]>([]);
   const [trends, setTrends] = useState<TrendData | null>(null);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
@@ -94,11 +95,11 @@ function App() {
           <h2>Front Desk Admin</h2>
         </div>
         <nav>
-          <div className={`nav-item ${activeView === 'knowledge' ? 'active' : ''}`} onClick={() => setActiveView('knowledge')}>
-            <Database size={18} /> Knowledge Base
-          </div>
           <div className={`nav-item ${activeView === 'trends' ? 'active' : ''}`} onClick={() => setActiveView('trends')}>
             <BarChart3 size={18} /> Trends
+          </div>
+          <div className={`nav-item ${activeView === 'knowledge' ? 'active' : ''}`} onClick={() => setActiveView('knowledge')}>
+            <Database size={18} /> Knowledge Base
           </div>
           <div className={`nav-item ${activeView === 'alerts' ? 'active' : ''}`} onClick={() => setActiveView('alerts')}>
             <AlertTriangle size={18} /> Live Alerts
@@ -120,18 +121,24 @@ function App() {
 
         <div className="table-container">
           {activeView === 'trends' && trends ? (
-            <div className="trends-grid">
+            <div className="trends-grid" style={{gridTemplateColumns: '1fr 1fr'}}>
               <div className="metric-card">
                 <div className="metric-label">Total Inquiries (24h)</div>
                 <div className="metric-value">{trends.total_inquiries}</div>
               </div>
               <div className="metric-card">
-                <div className="metric-label">Resolution Rate</div>
+                <div className="metric-label">AI Ticket Deflection Rate</div>
                 <div className="metric-value">{Math.round(trends.resolution_rate)}%</div>
               </div>
-              <div className="metric-card">
-                <div className="metric-label">Top Category</div>
-                <div className="metric-value">{trends.top_categories[0]?.name || 'N/A'}</div>
+              <div className="metric-card" style={{gridColumn: 'span 2'}}>
+                <div className="metric-label">Top Category: {trends.top_categories[0]?.name || 'N/A'}</div>
+                <div className="metric-value">{trends.top_categories[0]?.count || 0} Questions</div>
+                <div className="detail-section" style={{marginTop: '16px'}}>
+                  <span className="detail-label">Sample Questions:</span>
+                  <ul style={{fontSize: '13px', color: 'var(--text-secondary)', marginLeft: '20px', marginTop: '8px'}}>
+                    {trends.sample_questions.map((q, i) => <li key={i}>"{q}"</li>)}
+                  </ul>
+                </div>
               </div>
             </div>
           ) : (

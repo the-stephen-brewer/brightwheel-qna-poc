@@ -12,9 +12,10 @@ interface Message {
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 const QUICK_CHIPS = [
-  "🛑 What is the fever policy?",
-  "🦃 Are we open on Veterans Day?",
-  "🍏 I forgot to pack lunch today."
+  "🛑 What's the fever policy?",
+  "💊 Can we send medication in?",
+  "🧴 Should I bring sunscreen?",
+  "😴 When is nap time?"
 ];
 
 function App() {

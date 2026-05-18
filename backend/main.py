@@ -62,7 +62,8 @@ except Exception as e:
 
 # Model Names
 EMBEDDING_MODEL = "gemini-embedding-001"
-CHAT_MODEL = "gemini-2.0-flash-lite-001" 
+#CHAT_MODEL = "gemini-2.0-flash-lite-001"
+CHAT_MODEL = "gemini-2.5-flash"
 
 # In-memory session store
 SESSION_HISTORY_STORE = {}
@@ -77,46 +78,68 @@ class FeedbackRequest(BaseModel):
     feedback: str # 'thumbs_up', 'thumbs_down'
 
 # --- Utilities ---
-def log_interaction(question: str, answer: str, needs_review: bool):
+def log_interaction(question: str, answer: str, needs_review: bool, metadata: dict = None):
     try:
         with db_engine.begin() as conn:
             query = text("""
-                INSERT INTO front_desk_logs (question, answer, needs_review)
-                VALUES (:q, :a, :r)
+                INSERT INTO front_desk_logs (question, answer, needs_review, metadata)
+                VALUES (:q, :a, :r, :m)
                 RETURNING id
             """)
-            result = conn.execute(query, {"q": question, "a": answer, "r": needs_review})
+            result = conn.execute(query, {
+                "q": question, 
+                "a": answer, 
+                "r": needs_review, 
+                "m": json.dumps(metadata) if metadata else None
+            })
             return result.fetchone()[0]
     except Exception as e:
         print(f"Failed to log interaction: {e}")
         traceback.print_exc()
         return None
-
-def get_relevant_context(query: str, k: int = 2):
+def get_relevant_context(query: str, k: int = 6):
     try:
-        # Generate embedding
-        response = genai_client.models.embed_content(
-            model=EMBEDDING_MODEL,
-            contents=query,
-            config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
+        # 1. Query Expansion: Generate a few variations to catch different terms (e.g. 'rest' vs 'nap')
+        # We'll use a very fast internal prompt for this
+        expansion_response = genai_client.models.generate_content(
+            model=CHAT_MODEL,
+            contents=f"Generate 3 short search terms related to this question to help find the answer in a handbook: '{query}'. Output only the terms separated by commas.",
+            config=types.GenerateContentConfig(temperature=0.0)
         )
-        vector = response.embeddings[0].values
-        vector_str = "[" + ",".join(map(str, vector)) + "]"
-        
-        # Manual similarity search via SQL
-        with db_engine.connect() as conn:
-            query_sql = text("""
-                SELECT content FROM front_desk_knowledge
-                ORDER BY embedding <=> CAST(:v AS vector)
-                LIMIT :k
-            """)
-            result = conn.execute(query_sql, {"v": vector_str, "k": k})
-            rows = result.fetchall()
-            return "\n".join([row[0] for row in rows])
+        search_queries = [query] + [q.strip() for q in expansion_response.text.split(",")]
+
+        all_rows = []
+        seen_content = set()
+
+        # 2. Search for each variation
+        for q in search_queries[:3]: # Limit to 3 queries for speed
+            response = genai_client.models.embed_content(
+                model=EMBEDDING_MODEL,
+                contents=q,
+                config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
+            )
+            vector = response.embeddings[0].values
+            vector_str = "[" + ",".join(map(str, vector)) + "]"
+
+            with db_engine.connect() as conn:
+                query_sql = text("""
+                    SELECT content, metadata->>'category' as cat FROM front_desk_knowledge
+                    ORDER BY embedding <=> CAST(:v AS vector)
+                    LIMIT :k
+                """)
+                result = conn.execute(query_sql, {"v": vector_str, "k": k})
+                for row in result:
+                    if row[0] not in seen_content:
+                        # Prepend category for better LLM grounding
+                        all_rows.append(f"[{row[1]}] {row[0]}")
+                        seen_content.add(row[0])
+
+        return "\n\n".join(all_rows[:k]) # Return top K unique results
     except Exception as e:
         print(f"Retrieval error: {e}")
         traceback.print_exc()
         return ""
+
 
 # --- Endpoints ---
 @app.post("/api/parent/chat")
@@ -129,18 +152,64 @@ async def handle_parent_chat(req: ChatRequest, background_tasks: BackgroundTasks
         history = SESSION_HISTORY_STORE.get(req.session_id, [])
         
         # 3. Build Prompt
-        contents = []
+        with open("backend/reminders.json", "r") as f:
+            reminders = json.load(f)
+        
+        # Check if we should include a reminder (once every 3 days)
+        # For POC, we'll check the database for the last reminder sent to this session
+        include_reminder = False
+        reminder_text = ""
+        try:
+            with db_engine.connect() as conn:
+                res = conn.execute(text("""
+                    SELECT created_at FROM front_desk_logs 
+                    WHERE metadata->>'session_id' = :sid AND metadata->>'type' = 'reminder'
+                    ORDER BY created_at DESC LIMIT 1
+                """), {"sid": req.session_id})
+                last_reminder_row = res.fetchone()
+                
+                from datetime import datetime, timedelta
+                now = datetime.now()
+                
+                if not last_reminder_row:
+                    include_reminder = True
+                else:
+                    last_dt = last_reminder_row[0]
+                    # Ensure both are naive or both are aware for comparison
+                    if last_dt.tzinfo:
+                        delta = datetime.now(last_dt.tzinfo) - last_dt
+                    else:
+                        delta = now - last_dt
+                    
+                    if delta > timedelta(days=3):
+                        include_reminder = True
+
+                if include_reminder:
+                    now_str = now.strftime("%Y-%m-%d")
+                    upcoming = [r for r in reminders if r["date"] >= now_str]
+                    if upcoming:
+                        r = upcoming[0]
+                        reminder_text = f"REMINDER: {r['event']} on {r['date']}. {r['details']}"
+                        print(f"DEBUG: Including reminder for session {req.session_id}: {r['event']}")
+        except Exception as e:
+            print(f"Reminder check error: {e}")
+
         system_instruction = f"""You are 'Sunny', the AI Front Desk assistant for Sunshine Early Learning.
 Your job is to give busy parents fast, deeply polite, and highly accurate answers.
 
 CRITICAL INSTRUCTIONS:
-- Only answer using the Grounding Knowledge Matrix provided below.
+- Answer using the Grounding Knowledge Matrix provided below. 
+- BE HOLISTIC: If the user asks a question, try to provide other relevant details from the matrix that might be helpful.
+- IF A 'REMINDER' IS PRESENT BELOW: You MUST include it at the very end of your response, starting with a polite transition like "Also, just a quick reminder..." or "By the way, don't forget...".
 - If the answer is not present, or if it involves sensitive personal info, say exactly: 'I want to make sure you get the exact right answer for that. Let me loop in our center director right now to assist you directly.'
-- Keep answers strictly under 3 sentences.
+- Keep answers helpful but concise (under 5 sentences).
 
 Grounding Knowledge Matrix:
-{context}"""
+{context}
 
+{reminder_text}"""
+
+        contents = []
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
             contents.append(types.Content(role=role, parts=[types.Part(text=msg["text"])]))
@@ -166,9 +235,12 @@ Grounding Knowledge Matrix:
         # 6. Escalation Logic
         needs_review = "center director" in ai_answer.lower() or not context
 
-        # 7. Async Logging (We need the ID for feedback, so we might want to wait or use a separate logic)
-        # For PoC, let's just create the log synchronously or return the ID if we have it
-        log_id = log_interaction(req.message, ai_answer, needs_review)
+        # 7. Async Logging
+        log_meta = {"session_id": req.session_id}
+        if include_reminder and reminder_text:
+            log_meta["type"] = "reminder"
+            
+        log_id = log_interaction(req.message, ai_answer, needs_review, metadata=log_meta)
 
         return {
             "answer": ai_answer, 
@@ -221,10 +293,26 @@ async def get_trends():
             total = conn.execute(text("SELECT count(*) FROM front_desk_logs")).scalar() or 0
             resolved = conn.execute(text("SELECT count(*) FROM front_desk_logs WHERE needs_review = FALSE")).scalar() or 0
             
+            # Simple category trend based on the last few inquiries
+            # In a real app we'd use semantic clustering, here we'll just show the most frequent categories from our new knowledge base
+            top_cats_query = conn.execute(text("""
+                SELECT metadata->>'category' as cat, count(*) as count 
+                FROM front_desk_knowledge
+                GROUP BY cat ORDER BY count DESC LIMIT 1
+            """))
+            top_cat = top_cats_query.fetchone()
+            
+            # Get some sample questions
+            samples_query = conn.execute(text("SELECT question FROM front_desk_logs ORDER BY created_at DESC LIMIT 3"))
+            samples = [row[0] for row in samples_query]
+            if not samples:
+                samples = ["What is the fever policy?", "When is nap time?", "Do I need to bring sunscreen?"]
+
             return {
                 "total_inquiries": total,
                 "resolution_rate": (resolved / total * 100) if total > 0 else 100,
-                "top_categories": [{"name": "Policy Queries", "count": total}] 
+                "top_categories": [{"name": top_cat[0] if top_cat else "General Policies", "count": total}],
+                "sample_questions": samples
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
