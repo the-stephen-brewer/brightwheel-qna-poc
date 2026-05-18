@@ -1,0 +1,26 @@
+# Ignore python cache files
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore local virtual environments (CRITICAL)
+venv
+.venv
+env
+
+# Ignore git metadata and local secrets
+.git
+.gitignore
+.env
+.github
+.vscode
+
+# Ignore Docker metadata
+Dockerfile
+.dockerignore
+
+react-app
+
+*.csv
+*.json
