@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import urllib.parse
@@ -14,6 +15,14 @@ import traceback
 load_dotenv()
 
 app = FastAPI(title="Brightwheel AI Front Desk PoC")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Configuration & Initialization ---
 DB_PASS = os.environ.get("live_db_pass")
@@ -48,6 +57,10 @@ SESSION_HISTORY_STORE = {}
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "default-session"
+
+class FeedbackRequest(BaseModel):
+    log_id: str
+    feedback: str # 'thumbs_up', 'thumbs_down'
 
 # --- Utilities ---
 def log_interaction(question: str, answer: str, needs_review: bool):
@@ -136,13 +149,26 @@ Grounding Knowledge Matrix:
         # 6. Escalation Logic
         needs_review = "center director" in ai_answer.lower() or not context
 
-        # 7. Async Logging
-        background_tasks.add_task(log_interaction, req.message, ai_answer, needs_review)
+        # 7. Async Logging (We need the ID for feedback, so we might want to wait or use a separate logic)
+        # For PoC, let's just create the log synchronously or return the ID if we have it
+        log_id = log_interaction(req.message, ai_answer, needs_review)
 
-        return {"answer": ai_answer, "needs_review": needs_review}
+        return {"answer": ai_answer, "needs_review": needs_review, "log_id": str(log_id)}
     except Exception as e:
         print(f"ERROR IN CHAT ENDPOINT: {e}")
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/feedback")
+async def handle_feedback(req: FeedbackRequest):
+    try:
+        with db_engine.begin() as conn:
+            conn.execute(
+                text("UPDATE front_desk_logs SET feedback = :f WHERE id = :id"),
+                {"f": req.feedback, "id": req.log_id}
+            )
+        return {"status": "ok"}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")

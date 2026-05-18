@@ -1,0 +1,8 @@
+/* Clear default Vite styles to avoid conflicts with our mobile-first design */
+:root {
+  color-scheme: light;
+}
+
+#root {
+  width: 100%;
+}
